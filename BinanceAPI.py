@@ -1,4 +1,5 @@
 from binance.client import Client
+# pip install python-binance
 import pandas as pd
 
 api_key = "YOUR_API_KEY"
