@@ -30,14 +30,33 @@ def fetch_data(symbol, interval, start, end):
     if interval not in INTERVAL_MAP:
         raise ValueError(f"Invalid interval. Choose from: {list(INTERVAL_MAP.keys())}")
     
-    return client.get_historical_klines(
-         symbol, 
-         INTERVAL_MAP[interval], 
-         start,
-         end
-     )
+    data = client.get_historical_klines(
+        symbol,
+        INTERVAL_MAP[interval],
+        start,
+        end
+    )
+    # Convert to DataFrame
+    data = pd.DataFrame(data, columns=[
+    "Open time", "Open", "High", "Low", "Close", "Volume",
+    "Close time", "Quote asset volume", "Number of trades",
+    "Taker buy base", "Taker buy quote", "Ignore"
+    ])
+    
+    # Convert timestamps
+    data["Open time"] = pd.to_datetime(data["Open time"], unit="ms")
+    data["Close time"] = pd.to_datetime(data["Close time"], unit="ms")
+    data.set_index("Close time", inplace=True)
+    data["Close"] = pd.to_numeric(data["Close"])
+    data["High"] = pd.to_numeric(data["High"])
+    data["Low"] = pd.to_numeric(data["Low"])
+    data["Open"] = pd.to_numeric(data["Open"])
+    data["Volume"] = pd.to_numeric(data["Volume"])
+    data["Volume"] = data["Volume"].astype(int)
+    data = data.round(2)
+    return data[["Open", "High", "Low", "Close", "Volume"]]
 
-### Example time formats that can be used for start and end ###
+# Example time formats that can be used for start and end
 # "1 Nov 2025"           # just date
 # "1 Nov 2025 15:30"     # date + hour:minute
 # "2025-11-01 15:30:45"  # full date + time + seconds
@@ -45,17 +64,5 @@ def fetch_data(symbol, interval, start, end):
 
 # If no start time is given, it will just give maximum number of klines up to end time
 
-klines = fetch_data("BTCUSDT", "1m", None, "8 Nov 2025")
+# data = fetch_data("BTCUSDT", "1m", None, "8 Nov 2025")
 
-# Convert to DataFrame
-data = pd.DataFrame(klines, columns=[
-    "Open time", "Open", "High", "Low", "Close", "Volume",
-    "Close time", "Quote asset volume", "Number of trades",
-    "Taker buy base", "Taker buy quote", "Ignore"
-])
-
-# Convert timestamps
-data["Open time"] = pd.to_datetime(data["Open time"], unit="ms")
-data["Close time"] = pd.to_datetime(data["Close time"], unit="ms")
-data = data[::-1]
-print(data[["Close time", "Close"]])
