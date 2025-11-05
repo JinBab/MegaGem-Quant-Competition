@@ -1,6 +1,3 @@
 
-# bt = Backtest(GOOG, SmaCross, cash=10000, commission=0.002, exclusive_orders=True)
-# stats = bt.run()
-
-# bt.plot()
-# print(stats)
+# print("TOP 10 GAINERS 🔥")
+# print(df.head(10).to_string(index=False, float_format="{:,.2f}".format))
