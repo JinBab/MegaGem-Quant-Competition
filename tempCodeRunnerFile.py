@@ -1,0 +1,2 @@
+
+        return merged[['Coin', 'Score']]

@@ -85,7 +85,12 @@ def place_order(coin, side, qty, price=None):
         headers={"RST-API-KEY": API_KEY,
                  "MSG-SIGNATURE": generate_signature(payload)}
     )
-    print(r.status_code, r.text)
+    # Return parsed JSON when possible so callers can inspect order details.
+    try:
+        return r.json()
+    except Exception:
+        # Fall back to raw text and status
+        return {"status_code": r.status_code, "text": r.text}
 
 
 def cancel_order():
@@ -137,11 +142,16 @@ def pending_count():
 
 
 if __name__ == '__main__':
-    get_server_time()
+    # get_server_time()
     # get_ex_info()
-    # get_ticker()
+    # data = get_ticker()
+    # extract all ticker symbol names into an array
+    # symbols = list(data["Data"].keys())
+    # print(symbols)
+
     # place_order("TRUMP", "BUY", 1, 7)
-    cancel_order()
+    # place_order("HEMI", "SELL", 224200.2)
+    # cancel_order()
     get_balance()
     query_order()
-    pending_count()
+    # pending_count()

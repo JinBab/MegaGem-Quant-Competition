@@ -8,19 +8,10 @@ from datetime import datetime, timedelta
 import concurrent.futures
 
 # === 66 ROOSTOO CRYPTOS (USDT pairs) ===
-SYMBOLS = [
-    "BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","DOGEUSDT","ADAUSDT",
-    "TRXUSDT","AVAXUSDT","SHIBUSDT","LINKUSDT","DOTUSDT","BCHUSDT","NEARUSDT",
-    "LTCUSDT","MATICUSDT","ICPUSDT","UNIUSDT","APTUSDT","HBARUSDT","VETUSDT",
-    "FILUSDT","ETCUSDT","ATOMUSDT","ARBUSDT","IMXUSDT","OPUSDT","INJUSDT",
-    "FTTUSDT","ALGOUSDT","THETAUSDT","FLOWUSDT","SANDUSDT","AXSUSDT","MANAUSDT",
-    "GALAUSDT","CHZUSDT","EOSUSDT","XTZUSDT","ZECUSDT","AAVEUSDT","MKRUSDT",
-    "KSMUSDT","CRVUSDT","GRTUSDT","RUNEUSDT","SNXUSDT","COMPUSDT","ZILUSDT",
-    "ENJUSDT","BATUSDT","LRCUSDT","YFIUSDT","SUSHIUSDT","1INCHUSDT","REEFUSDT",
-    "OCEANUSDT","RNDRUSDT","CELOUSDT","KAVAUSDT","ANKRUSDT","ONTUSDT","IOSTUSDT",
-    "SKLUSDT","DENTUSDT","HOTUSDT","CELRUSDT","STMXUSDT","RLCUSDT"
-]
 
+SYMBOLS = ['1000CHEEMSUSDT', 'AAVEUSDT', 'ADAUSDT', 'APTUSDT', 'ARBUSDT', 'ASTERUSDT', 'AVAXUSDT', 'AVNTUSDT', 'BIOUSDT', 'BMTUSDT', 'BNBUSDT', 'BONKUSDT', 'BTCUSDT', 'CAKEUSDT', 'CFXUSDT', 'CRVUSDT', 'DOGEUSDT', 'DOTUSDT', 'EDENUSDT', 'EIGENUSDT', 'ENAUSDT', 'ETHUSDT', 'FETUSDT', 'FILUSDT', 'FLOKIUSDT', 'FORMUSDT', 'HBARUSDT', 'HEMIUSDT', 'ICPUSDT', 'LINEAUSDT', 'LINKUSDT', 'LISTAUSDT', 'LTCUSDT', 'MIRAUSDT', 'NEARUSDT', 'ONDOUSDT', 'OPENUSDT', 'PAXGUSDT', 'PENDLEUSDT', 'PENGUUSDT', 'PEPEUSDT', 'PLUMEUSDT', 'POLUSDT', 'PUMPUSDT', 'SUSDT', 'SEIUSDT', 'SHIBUSDT', 'SOLUSDT', 'SOMIUSDT', 'STOUSDT', 'SUIUSDT', 'TAOUSDT', 'TONUSDT', 'TRUMPUSDT', 'TRXUSDT', 'TUTUSDT', 'UNIUSDT', 'VIRTUALUSDT', 'WIFUSDT', 'WLDUSDT', 'WLFIUSDT', 'XLMUSDT', 'XPLUSDT', 'XRPUSDT', 'ZECUSDT','ZENUSDT']
+
+# main function used for getting 24h price change
 def get_24h_change():
     url = "https://api.binance.com/api/v3/ticker/24hr"
     resp = requests.get(url).json()
@@ -30,17 +21,59 @@ def get_24h_change():
     
 
 
-    df = pd.DataFrame(data)[['symbol', 'priceChangePercent', 'lastPrice', 'quoteVolume']]
+    df = pd.DataFrame(data)[['symbol', 'priceChangePercent', 'quoteVolume']]
     df['priceChangePercent'] = df['priceChangePercent'].astype(float)
     df = df.sort_values('priceChangePercent', ascending=False).reset_index(drop=True)
     
     # Clean names
     df['coin'] = df['symbol'].str.replace('USDT', '')
-    df = df[['coin', 'priceChangePercent', 'lastPrice', 'quoteVolume']]
-    df.columns = ['Coin', '24h %', 'Price', 'Volume']
-    
+    df = df[['coin', 'priceChangePercent']]
+    df.columns = ['Coin', 'Change %']
+    # print(df)
     return df
 
+
+def get_x_change(window):
+    # use GET /api/v3/ticker
+
+    results = []
+
+    url = "https://api.binance.com/api/v3/ticker"
+    params = {
+        "symbol": "<symbol>",
+        "windowSize": window,
+    }
+
+    def execute_request(symbol):
+        temp = symbol
+        params["symbol"] = symbol
+        resp = requests.get(url, params=params).json()
+        results.append({
+                'symbol': temp,
+                'priceChangePercent': resp['priceChangePercent']
+            })
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=70) as executor:
+        executor.map(execute_request, SYMBOLS)
+
+    df = pd.DataFrame(results)
+    df['priceChangePercent'] = df['priceChangePercent'].astype(float)
+    # df['Volume'] = df['Volume'].astype(float)
+    df = df.sort_values('priceChangePercent', ascending=False).reset_index(drop=True)
+
+    # Clean names
+    df['coin'] = df['symbol'].str.replace('USDT', '')
+    df = df[['coin', 'priceChangePercent']]
+    df.columns = ['Coin', f'Change %']
+
+    # print(df)
+    return df
+
+
+
+
+    
+# main function used for getting price change for any window besides 1 day
 def get_custom_change(window, end_datetime):
     """Return change over a custom window ending at end_datetime.
 
@@ -52,9 +85,10 @@ def get_custom_change(window, end_datetime):
     start and end prices (avoid downloading the full range). We try to get a
     kline/trade at or immediately before each timestamp.
     """
+    
+    if end_datetime > datetime.now():
+        end_datetime = datetime.now()
     url_klines = "https://api.binance.com/api/v3/klines"
-    url_agg = "https://api.binance.com/api/v3/aggTrades"
-    url_ticker = "https://api.binance.com/api/v3/ticker/price"
 
     results = []
 
@@ -131,17 +165,21 @@ def get_custom_change(window, end_datetime):
     return df
 
 
-# df = get_24h_change()
-end_time = "2025-11-05 00:00"
-#convert date input into datetime object
-end_time = datetime.strptime(end_time, "%Y-%m-%d %H:%M")
+if __name__ == '__main__':
+    df = get_24h_change()
+    end_time = "2025-11-10 00:00"
+    # convert date input into datetime object
+    end_time = datetime.strptime(end_time, "%Y-%m-%d %H:%M")
 
-# example: 1 day window ending at midnight UTC today
-custom_df = get_custom_change("1d", end_time)
 
-# print("TOP 10 GAINERS 🔥")
-# print(df.head(10).to_string(index=False, float_format="{:,.2f}".format))
+    # example: 1 day window ending at midnight UTC today
+    custom_df = get_custom_change("1d", end_time)
 
-print(f"{end_time.strftime('%Y-%m-%d %H:%M')}")
-print("CUSTOM WINDOW TOP 10 🔥")
-print(custom_df.head(10).to_string(index=False, float_format="{:,.2f}".format))
+    print(get_x_change("1d").head(10))
+
+    # print("TOP 10 GAINERS 🔥")
+    # print(df.head(10).to_string(index=False, float_format="{:,.2f}".format))
+
+    # print(f"{end_time.strftime('%Y-%m-%d %H:%M')}")
+    print("CUSTOM WINDOW TOP 10 🔥")
+    print(custom_df.head(10).to_string(index=False, float_format="{:,.2f}".format))
