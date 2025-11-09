@@ -69,10 +69,6 @@ def get_x_change(window):
     # print(df)
     return df
 
-
-
-
-    
 # main function used for getting price change for any window besides 1 day
 def get_custom_change(window, end_datetime):
     """Return change over a custom window ending at end_datetime.
@@ -164,6 +160,13 @@ def get_custom_change(window, end_datetime):
 
     return df
 
+def get_price(symbol):
+    url = "https://api.binance.com/api/v3/ticker/price"
+    params = {
+        "symbol": symbol
+    }
+    resp = requests.get(url, params=params).json()
+    return float(resp['price'])
 
 if __name__ == '__main__':
     df = get_24h_change()
@@ -175,11 +178,11 @@ if __name__ == '__main__':
     # example: 1 day window ending at midnight UTC today
     custom_df = get_custom_change("1d", end_time)
 
-    print(get_x_change("1d").head(10))
+    # print(get_x_change("1d").head(10))
 
     # print("TOP 10 GAINERS 🔥")
     # print(df.head(10).to_string(index=False, float_format="{:,.2f}".format))
 
     # print(f"{end_time.strftime('%Y-%m-%d %H:%M')}")
-    print("CUSTOM WINDOW TOP 10 🔥")
-    print(custom_df.head(10).to_string(index=False, float_format="{:,.2f}".format))
+    # print("CUSTOM WINDOW TOP 10 🔥")
+    # print(custom_df.head(10).to_string(index=False, float_format="{:,.2f}".format))
