@@ -134,7 +134,6 @@ class TradingBot:
         merged = merged.sort_values('Score', ascending=False).reset_index(drop=True)
         self.last_scan_df =  merged[['Coin', 'Score']]
         
-
     def main_strategy(self):
         """Main strategy executed on schedule.
 
@@ -256,6 +255,8 @@ class TradingBot:
         
         # clear the pending queue (we're single-threaded so this is safe)
 
+
+        # fix entry condition to be breakout (coming up towards the entry price, not just when it is below the entry price)
         for trade in self.pending_queue:
             logger.debug("Checking pending trade: %s", trade)
             price = self.get_price_for_symbol(market_prices, f"{trade.symbol}USDT")
@@ -347,6 +348,7 @@ class TradingBot:
 
         # store rounded quantity on the trade for bookkeeping
         trade.quantity = rounded_qty
+        print("BUY MARKET:", trade.symbol, rounded_qty)
 
         logger.info("buy_market: %s %s @ %s (qty=%s)", trade.symbol, trade.size, trade.entry_price, rounded_qty)
         
@@ -424,7 +426,6 @@ class TradingBot:
                         continue
                     # price is returned as float by get_price_for_symbol
                     self.portfolio_value += float(price) * free_amt
-
 
     def portfolio_status(self) -> Dict[str, Any]:
         """Return and log a human-readable snapshot of current portfolio and pending orders.
@@ -567,6 +568,7 @@ if __name__ == "__main__":
     # simple demo: call portfolio snapshot once
     bot.portfolio_status()
     # start the main run loop (will run until interrupted)
-    bot.run_loop()
+    # bot.run_loop()
+    print(bot.last_scan_df)
     # market_prices = bot.get_all_market_prices()
     # print(market_prices)
