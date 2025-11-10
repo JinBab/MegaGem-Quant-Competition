@@ -23,7 +23,7 @@ from decimal import Decimal, ROUND_DOWN
 from market_scanner import get_custom_change, SYMBOLS  # market scanning utility and ALL symbols list
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
 @dataclass
@@ -149,7 +149,7 @@ class TradingBot:
         self.pending_queue = []
 
         # pick top 6 coins to consider
-        top_n = 7
+        top_n = 8
         selected_coins = self.last_scan_df[:top_n]
         # turn selected coins into a list of coins
         selected_coin_names = selected_coins['Coin'].tolist()
@@ -158,17 +158,17 @@ class TradingBot:
         # Fetch OHLCV data for selected coins
         for item in selected_coin_names:
             ohlcv_1h = fetch_OHLCV(f"{item}USDT", '1h', start=datetime.now() - timedelta(hours=24), end=datetime.now())
-            # entry_price = ohlcv_1h['High'].rolling(window=8).max().iloc[-1]
+            entry_price = ohlcv_1h['Close'].max()
             # determine entry price from market; skip symbol if price not available
-            ### TESTING PURPOSE ####
-            entry_price = None
-            price_map = self.get_all_market_prices()
-            price = self.get_price_for_symbol(price_map, f"{item}USDT")
-            if price is None or price == 0:
-                # skip this symbol if we cannot obtain a valid market price
-                logger.debug("main_strategy: no valid price for %s, skipping", item)
-                continue
-            entry_price = float(price)
+            # ### TESTING PURPOSE ####
+            # entry_price = None
+            # price_map = self.get_all_market_prices()
+            # price = self.get_price_for_symbol(price_map, f"{item}USDT")
+            # if price is None or price == 0:
+            #     # skip this symbol if we cannot obtain a valid market price
+            #     logger.debug("main_strategy: no valid price for %s, skipping", item)
+            #     continue
+            # entry_price = float(price)
 
             ### TEST CODE END ####
 
@@ -182,19 +182,17 @@ class TradingBot:
             daily_volatility = ohlcv_1h['log_return'].std()
 
             # Define position size and stop loss based on volatility (example: inverse volatility scaling)
-            stop_loss_pct = daily_volatility * 2 if daily_volatility else 0.05
+            stop_loss_pct = daily_volatility * 1.5 if daily_volatility else 0.05
 
             stop_loss = entry_price * (1 - stop_loss_pct)
-            # take_profit = entry_price * (1 + 3*stop_loss_pct)
+            take_profit = entry_price * (1 + 4*stop_loss_pct)
 
-            #### TESTING PURPOSE #####
-            take_profit = entry_price * 1.001
+            # #### TESTING PURPOSE #####
+            # take_profit = entry_price * 1.001
 
             # given maximum portfolio loss of 1% per trade, calculate position size
             max_portfolio_loss_pct = 0.01
             position_size = (max_portfolio_loss_pct) / stop_loss_pct
-
-            stop_loss = entry_price * 0.998
 
 
             if (entry_price > 0.001 and position_size < 0.3 and position_size > 0.1): 
@@ -222,15 +220,6 @@ class TradingBot:
                 trade = Trade(symbol=item, status='pending', entry_price=entry_price, size=position_size, tp=take_profit, sl=stop_loss)
 
                 if item in self.positions.keys():
-                    # update take profit if its higher
-                    existing_tp = self.positions[item].tp
-                    try:
-                        existing_tp_num = float(existing_tp) if existing_tp is not None else None
-                    except Exception:
-                        existing_tp_num = None
-
-                    if existing_tp_num is None or take_profit > existing_tp_num:
-                        self.positions[item].tp = take_profit
                     continue 
 
                 self.add_pending_trade(trade)
@@ -271,11 +260,9 @@ class TradingBot:
 
         # 3) check open positions for TP/SL
         current_positions = list(self.positions.values())
-        print(self.positions)
         for pos in current_positions:
             logger.debug("order_management: checking position %s", pos.symbol)
             price = self.get_price_for_symbol(market_prices, f"{pos.symbol}USDT")
-            print(pos.symbol, f"price: {price}, TP: {pos.tp}")
             if price is None:
                 continue
             if pos.tp and price >= pos.tp:
@@ -348,7 +335,6 @@ class TradingBot:
 
         # store rounded quantity on the trade for bookkeeping
         trade.quantity = rounded_qty
-        print("BUY MARKET:", trade.symbol, rounded_qty)
 
         logger.info("buy_market: %s %s @ %s (qty=%s)", trade.symbol, trade.size, trade.entry_price, rounded_qty)
         
@@ -494,7 +480,8 @@ class TradingBot:
 
         `tol` is a small tolerance to account for tiny differences.
         """
-        return market_price <= (entry_price)
+
+        return market_price >= (entry_price)
 
     def run_loop(self):
         """Run the main scheduling loop (single-threaded).
@@ -559,16 +546,20 @@ if __name__ == "__main__":
     # minimal example runner — for development only
 
     bot = TradingBot(config={
-        "scan_interval": 60*60*3,
-        "strategy_interval": 1200,
-        "order_mgmt_interval": 8,
+        "scan_interval": 60*60*2,
+        "strategy_interval": 60*30,
+        "order_mgmt_interval": 2,
         "default_size": 0.001,
     })
+
+    # buy and sell a specific asset at the start (for testing)
+    print(place_order("DOGE", "BUY", 10))
+    print(place_order("DOGE", "SELL", 10))
 
     # simple demo: call portfolio snapshot once
     bot.portfolio_status()
     # start the main run loop (will run until interrupted)
-    # bot.run_loop()
-    print(bot.last_scan_df)
+    bot.run_loop()
+    # print(bot.last_scan_df)
     # market_prices = bot.get_all_market_prices()
     # print(market_prices)
