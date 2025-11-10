@@ -27,14 +27,18 @@ INTERVAL_MAP = {
 }
 
 def fetch_data(symbol, interval, start, end):
+    # convert start and end datetimes to str
+    start_str = start.strftime("%Y-%m-%d %H:%M:%S")
+    end_str = end.strftime("%Y-%m-%d %H:%M:%S")
+
     if interval not in INTERVAL_MAP:
         raise ValueError(f"Invalid interval. Choose from: {list(INTERVAL_MAP.keys())}")
     
     data = client.get_historical_klines(
         symbol,
         INTERVAL_MAP[interval],
-        start,
-        end
+        start_str,
+        end_str
     )
     # Convert to DataFrame
     data = pd.DataFrame(data, columns=[

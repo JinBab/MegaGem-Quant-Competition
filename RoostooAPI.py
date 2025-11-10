@@ -160,11 +160,17 @@ if __name__ == '__main__':
     # extract all ticker symbol names into an array
     # symbols = list(data["Data"].keys())
     # print(symbols)
+    
+    ticker = get_ticker("ZEC/USD")
 
-    # place_order("TRUMP", "BUY", 1, 7)
+    # if ticker['Success']:
+    #     print(ticker['Data'].values())
+    #     place_order("ZEC", "BUY", 1, list(ticker['Data'].values())[0]['LastPrice'])
+
+    # sell_all()
+    place_order("LINEA", "BUY", 100.0)
     # place_order("ETH", "BUY", 0.004)
     # cancel_order()
-    sell_all()
     get_balance()
     # query_order()
     # pending_count()

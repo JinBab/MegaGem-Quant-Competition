@@ -23,7 +23,7 @@ from BinanceAPI import fetch_data, LOT_STEP_INFO
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 
 # Normal import for the scanner (renamed to a valid module name)
-from market_scanner import get_x_change, get_24h_change, get_price
+from market_scanner import get_custom_change, get_24h_change, get_price
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -43,7 +43,7 @@ class Config:
     trend_hours: int = 6  # lookback hours to verify uptrend
     trend_intervals: List[str] = field(default_factory=lambda: ['5m', '1h'])  # multi-timeframe intervals to confirm trend
     # When True, simulate orders locally and don't call RoostooAPI.place_order
-    dry_run: bool = True
+    dry_run: bool = False
     # Minimum 24h quote volume (USDT) required to consider a symbol for trading
     min_volume: float = 10000.0
     # Default take-profit percent for reporting (10% -> 0.10). Used for display and TP suggestions.
@@ -57,10 +57,8 @@ class Config:
     estimated_slippage_pct: float = 0.002  # 0.2%
     expected_edge_buffer_pct: float = 0.002  # extra buffer beyond estimated costs
     min_cash_per_trade: float = 50.0
-    # test helper: when True, ignore required edge checks to force simulated buys in dry-run
-    test_force_trades: bool = False
-    # when True in a test run, skip the uptrend/multi-timeframe confirmation
-    test_ignore_trend: bool = False
+    # momentum weighting: weights for [long_window, '1d', '1h'] (shorter windows weighted more)
+    momentum_weights: List[float] = field(default_factory=lambda: [0.2, 0.3, 0.5])
     # scheduler intervals (seconds)
     tick_interval_seconds: int = 15
     price_refresh_seconds: int = 30
@@ -247,14 +245,7 @@ class PortfolioManager:
             try:
                 current = float(get_price(sym))
             except Exception:
-                # try quick OHLCV fetch
-                try:
-                    end = datetime.now()
-                    start = end - timedelta(minutes=5)
-                    df = fetch_data(sym, '1m', start.strftime("%d %b %Y %H:%M:%S"), end.strftime("%d %b %Y %H:%M:%S"))
-                    current = float(df['Close'].iloc[-1])
-                except Exception:
-                    current = avg_price
+                current = avg_price
 
             change_pct = ((current - avg_price) / avg_price * 100) if avg_price > 0 else 0.0
             stop_price = avg_price * (1 - self.config.stop_loss_pct) if avg_price > 0 else 0.0
@@ -292,7 +283,7 @@ class PortfolioManager:
             return
         # nice formatting
         with pd.option_context('display.float_format', '{:,.4f}'.format):
-            logger.info(f"Portfolio snapshot: Cash={self.cash:.2f}, Equity={self.equity():.2f}")
+            logger.info(f"Portfolio snapshot: Cash={self.cash:.2f}, Equity={self.equity():.2f}, Net Value={(self.equity()+self.cash):.2f}")
             print(df.to_string(index=False))
 
 
@@ -309,22 +300,44 @@ class Strategy:
 
         Default: use get_24h_change as placeholder.
         """
-        # Compute momentum using a long window (config.trading_window_days) and short window (1d)
-        long_window = f"{self.config.trading_window_days}d"
-        long_df = get_x_change(long_window)
-        short_df = get_24h_change()
+        # Compute momentum across three windows: 5d, 1d, and 1h
+        windows = ["5d", '1d', '12h']
+        weights = self.config.momentum_weights if hasattr(self.config, 'momentum_weights') else [0.2, 0.3, 0.5]
 
-        # long_df columns: ['Coin', 'Change %', 'Price']
-        long_df = long_df.rename(columns={ 'Change %': 'LongChange' })
-        short_df = short_df.rename(columns={ 'Change %': 'ShortChange' })
+        dfs = []
+        for w in windows:
+            try:
+                dfw = get_custom_change(w, datetime.now())
+                # normalize column name
+                dfw = dfw.rename(columns={'Change %': f'Change_{w}'})
+                dfs.append(dfw[['Coin', f'Change_{w}']])
+            except Exception:
+                dfs.append(pd.DataFrame(columns=['Coin', f'Change_{w}']))
 
-        merged = pd.merge(long_df, short_df[['Coin','ShortChange']], on='Coin', how='left')
-        merged['ShortChange'] = merged['ShortChange'].fillna(0.0)
+        # merge all results
+        merged = dfs[0]
+        for dfw in dfs[1:]:
+            merged = pd.merge(merged, dfw, on='Coin', how='outer')
 
-        # Combined score: weight longer-term momentum higher
-        merged['Score'] = merged['LongChange'].astype(float) * 0.7 + merged['ShortChange'].astype(float) * 0.3
+        # ensure numeric columns exist and fill missing
+        for w in windows:
+            col = f'Change_{w}'
+            if col not in merged.columns:
+                merged[col] = 0.0
+            merged[col] = merged[col].astype(float).fillna(0.0)
+
+        # normalize weights
+        try:
+            wsum = sum(weights)
+            norm_weights = [float(w) / wsum for w in weights]
+        except Exception:
+            norm_weights = [0.2, 0.3, 0.5]
+
+        merged['Score'] = 0.0
+        for i, w in enumerate(windows):
+            merged['Score'] += merged[f'Change_{w}'].astype(float) * norm_weights[i]
+
         merged = merged.sort_values('Score', ascending=False).reset_index(drop=True)
-        print(merged)
         return merged[['Coin', 'Score']]
 
     def generate_entry_signals(self, scored: pd.DataFrame) -> List[str]:
@@ -459,8 +472,7 @@ class Runner:
             except Exception:
                 score_val = 0.0
 
-            # allow forced trades in test mode
-            if (not self.config.test_force_trades) and (score_val < required_edge_pct):
+            if score_val < required_edge_pct:
                 logger.info(f"Skipping {symbol}: score {score_val:.3f}% below required edge {required_edge_pct:.3f}%")
                 continue
 
@@ -480,14 +492,12 @@ class Runner:
                     continue
 
             # uptrend confirmation
-                # validate uptrend (can be bypassed in test mode)
-                try:
-                    if not getattr(self.config, 'test_ignore_trend', False):
-                        if not self._is_uptrend(symbol, hours=self.config.trend_hours, intervals=self.config.trend_intervals):
-                            logger.info(f"Skipping {symbol}: not in uptrend across {self.config.trend_intervals}")
-                            continue
-                except Exception:
-                    logger.debug(f"Trend check exception for {symbol}, continuing")
+            # try:
+            #     if not self._is_uptrend(symbol, hours=self.config.trend_hours, intervals=self.config.trend_intervals):
+            #         logger.info(f"Skipping {symbol}: not in uptrend across {self.config.trend_intervals}")
+            #         continue
+            # except Exception:
+            #     logger.debug(f"Trend check exception for {symbol}, continuing")
 
             # sizing
             this_trade_risk = per_trade_risk
@@ -650,20 +660,6 @@ class Runner:
                         cur = avg
                 unrealized = (cur - avg) * qty
                 logger.info(f"[LIGHT] Position {sym}: qty={qty}, avg={avg:.6f}, cur={cur:.6f}, PnL={unrealized:.2f}")
-                # quick TP/SL trigger: if price crosses TP or SL, run deep check and exit
-                try:
-                    tp_price = avg * (1 + self.config.take_profit_pct)
-                    sl_price = avg * (1 - self.config.stop_loss_pct)
-                    # if current price reached or exceeded TP, or dropped to or below SL
-                    if cur >= tp_price or cur <= sl_price:
-                        logger.info(f"[LIGHT] {sym} near TP/SL (cur={cur:.6f}, TP={tp_price:.6f}, SL={sl_price:.6f}), running deep check/exit")
-                        # run deep check and exit for this symbol
-                        try:
-                            self.manage_positions_deep(symbols=[sym])
-                        except Exception:
-                            logger.exception(f"manage_positions_deep failed for {sym}")
-                except Exception:
-                    logger.debug(f"Could not evaluate TP/SL for {sym}")
         except Exception:
             logger.debug("manage_positions_light failed")
 
@@ -723,109 +719,6 @@ class Runner:
                 # TODO: implement TP/SL checks here and call OrderManager to exit when triggered
             except Exception:
                 logger.debug(f"Could not fetch price for {sym}")
-
-    def manage_positions_deep(self, symbols: Optional[List[str]] = None):
-        """Deeper checks for positions. Fetches recent OHLCV and places market SELLs when TP/SL crossed.
-
-        Executes market SELL orders via OrderManager (or simulates in dry-run). Updates portfolio on fills.
-        """
-        try:
-            targets = symbols if symbols else list(self.pm.positions.keys())
-            for sym in targets:
-                pos = self.pm.positions.get(sym)
-                if not pos:
-                    continue
-                # fetch a short window of 1m candles to check if TP/SL crossed recently
-                try:
-                    end = datetime.now()
-                    start = end - timedelta(minutes=15)
-                    df = fetch_data(sym, '1m', start.strftime("%d %b %Y %H:%M:%S"), end.strftime("%d %b %Y %H:%M:%S"))
-                except Exception:
-                    logger.debug(f"Could not fetch klines for deep check {sym}, falling back to latest price")
-                    try:
-                        cur_price = float(get_price(sym))
-                    except Exception:
-                        continue
-                    df = None
-
-                # determine current price and check cross
-                if df is not None and not df.empty:
-                    last_close = float(df['Close'].iloc[-1])
-                    high = float(df['High'].max()) if 'High' in df.columns else last_close
-                    low = float(df['Low'].min()) if 'Low' in df.columns else last_close
-                    cur_price = last_close
-                else:
-                    cur_price = float(get_price(sym)) if get_price(sym) else pos['avg_price']
-                    high = cur_price
-                    low = cur_price
-
-                avg = float(pos.get('avg_price', 0) or 0)
-                tp_price = avg * (1 + self.config.take_profit_pct)
-                sl_price = avg * (1 - self.config.stop_loss_pct)
-
-                crossed_tp = cur_price >= tp_price or high >= tp_price
-                crossed_sl = cur_price <= sl_price or low <= sl_price
-
-                if not (crossed_tp or crossed_sl):
-                    logger.debug(f"Deep check: {sym} did not cross TP/SL (cur={cur_price:.6f}, TP={tp_price:.6f}, SL={sl_price:.6f})")
-                    continue
-
-                # prepare sell quantity (all position qty)
-                qty = float(pos.get('qty', 0))
-                if qty <= 0:
-                    continue
-
-                # rounding to lot step
-                try:
-                    step = LOT_STEP_INFO[sym]['step_size']
-                    min_qty = LOT_STEP_INFO[sym]['min_qty']
-                except Exception:
-                    step, min_qty = (0.001, 0.001)
-
-                try:
-                    getcontext().prec = 28
-                    qty_dec = Decimal(str(qty))
-                    step_dec = Decimal(str(step))
-                    # round down when selling to avoid attempting > available
-                    n_steps = (qty_dec / step_dec).quantize(Decimal('1'), rounding='ROUND_FLOOR')
-                    qty_rounded = (n_steps * step_dec).normalize()
-                    qty_rounded = float(qty_rounded)
-                    if qty_rounded <= 0:
-                        logger.info(f"Rounded sell qty for {sym} is zero, skipping")
-                        continue
-                except Exception:
-                    qty_rounded = round(qty, 3)
-                    if qty_rounded <= 0:
-                        continue
-
-                # place market SELL (Roostoo) — per your note, use market
-                logger.info(f"Placing SELL market order for {sym}: qty={qty_rounded} (dry_run={self.config.dry_run})")
-                res = self.om.place_market(sym, 'SELL', float(qty_rounded))
-
-                if not res.get('ok'):
-                    logger.error(f"Sell order failed for {sym}: {res}")
-                    continue
-
-                filled_qty = res.get('filled_qty') or res.get('filledQty') or res.get('filled_quantity') or qty_rounded
-                fill_price = res.get('fill_price') or res.get('avg_price') or res.get('fillPrice') or cur_price
-
-                try:
-                    filled_qty = float(filled_qty)
-                except Exception:
-                    filled_qty = qty_rounded
-                try:
-                    fill_price = float(fill_price)
-                except Exception:
-                    fill_price = cur_price
-
-                # update portfolio after sell
-                try:
-                    self.pm.update_after_fill(sym, 'SELL', filled_qty, fill_price)
-                    logger.info(f"Sold {filled_qty} {sym} @ {fill_price:.6f}")
-                except Exception:
-                    logger.exception(f"Failed to update portfolio after selling {sym}")
-        except Exception:
-            logger.exception("manage_positions_deep failed")
 
     def run_once(self):
         end_dt = datetime.now()
@@ -923,26 +816,9 @@ class Runner:
         except KeyboardInterrupt:
             logger.info("Stopping scheduler loop")
 
-    def run_dry_cycles(self, cycles: int = 3, sleep_seconds: float = 1.0, force_trades: bool = False):
-        """Run `run_once()` for a small number of cycles in dry-run.
-
-        If force_trades is True, set `config.test_force_trades` temporarily so entry checks
-        will be allowed even if market score is below required edge. Restores original flag.
-        """
-        orig = getattr(self.config, 'test_force_trades', False)
-        try:
-            if force_trades:
-                self.config.test_force_trades = True
-            for i in range(cycles):
-                logger.info(f"DRY-CYCLE {i+1}/{cycles}")
-                self.run_once()
-                time.sleep(sleep_seconds)
-        finally:
-            self.config.test_force_trades = orig
-
 
 if __name__ == '__main__':
     cfg = Config()
     runner = Runner(cfg)
     # quick run
-    runner.run_loop()
+    runner.run_once()

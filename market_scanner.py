@@ -81,6 +81,8 @@ def get_custom_change(window, end_datetime):
     start and end prices (avoid downloading the full range). We try to get a
     kline/trade at or immediately before each timestamp.
     """
+    if window == '1d':
+        return get_24h_change()
     
     if end_datetime > datetime.now():
         end_datetime = datetime.now()
