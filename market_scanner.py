@@ -13,7 +13,7 @@ SYMBOLS = ['1000CHEEMSUSDT', 'AAVEUSDT', 'ADAUSDT', 'APTUSDT', 'ARBUSDT', 'ASTER
 
 # main function used for getting 24h price change
 def get_24h_change():
-    url = "https://api.binance.com/api/v3/ticker/24hr"
+    url = "https://api.binance.us/api/v3/ticker/24hr"
     resp = requests.get(url).json()
     
     # Filter only our 66

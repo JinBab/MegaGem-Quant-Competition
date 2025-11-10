@@ -5,8 +5,8 @@ import hmac
 import time
 
 
-API_KEY = "UVVCgOdMjpH3yjoHFTIJLun9ODTwmPjYMCDYGuOYmjHAGPKDcTWfGtU4jAqYJw32"
-SECRET = "16QegeXbzXsgGhNBzVheqsQnz35vv1YRIR8ZHxCBJWxwfkMMoAyNjmuiwZKbLgFc"
+API_KEY = "n2V5gF0yJ8wT1kL7qP4cN9rD6eB3zI5mS0vA8xW2oU1lY7tH3uK6pC9bX4jQ0fM"
+SECRET = "F0gJ6hKlZ2xC8vBnM4qW1eRtY5uI7oPaS9dF3gHjK8lL0ZxCV2bN6mQwE1rT5yUi"
 
 BASE_URL = "https://mock-api.roostoo.com"
 

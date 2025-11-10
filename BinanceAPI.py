@@ -1,64 +1,109 @@
-from binance.client import Client
-# pip install python-binance
+import requests
 import pandas as pd
+from datetime import datetime
 
-api_key = "YOUR_API_KEY"
-api_secret = "YOUR_API_SECRET"
+# Use the public Binance REST API directly via requests. This removes the
+# dependency on python-binance's Client for simple historical klines fetches.
+BASE_URL = "https://api.binance.us"
 
-client = Client(api_key, api_secret)
-
-# all possible time intervals in binance
+# All valid interval strings supported by Binance. We use the same string
+# values when calling the /api/v3/klines endpoint.
 INTERVAL_MAP = {
-    "1m": Client.KLINE_INTERVAL_1MINUTE,
-    "3m": Client.KLINE_INTERVAL_3MINUTE,
-    "5m": Client.KLINE_INTERVAL_5MINUTE,
-    "15m": Client.KLINE_INTERVAL_15MINUTE,
-    "30m": Client.KLINE_INTERVAL_30MINUTE,
-    "1h": Client.KLINE_INTERVAL_1HOUR,
-    "2h": Client.KLINE_INTERVAL_2HOUR,
-    "4h": Client.KLINE_INTERVAL_4HOUR,
-    "6h": Client.KLINE_INTERVAL_6HOUR,
-    "8h": Client.KLINE_INTERVAL_8HOUR,
-    "12h": Client.KLINE_INTERVAL_12HOUR,
-    "1d": Client.KLINE_INTERVAL_1DAY,
-    "3d": Client.KLINE_INTERVAL_3DAY,
-    "1w": Client.KLINE_INTERVAL_1WEEK,
-    "1M": Client.KLINE_INTERVAL_1MONTH
+    "1m": "1m",
+    "3m": "3m",
+    "5m": "5m",
+    "15m": "15m",
+    "30m": "30m",
+    "1h": "1h",
+    "2h": "2h",
+    "4h": "4h",
+    "6h": "6h",
+    "8h": "8h",
+    "12h": "12h",
+    "1d": "1d",
+    "3d": "3d",
+    "1w": "1w",
+    "1M": "1M",
 }
 
-def fetch_data(symbol, interval, start, end):
-    # convert start and end datetimes to str
-    start_str = start.strftime("%Y-%m-%d %H:%M:%S")
-    end_str = end.strftime("%Y-%m-%d %H:%M:%S")
 
+def _to_ms(ts):
+    """Convert a datetime or string to milliseconds since epoch."""
+    if ts is None:
+        return None
+    if isinstance(ts, (int, float)):
+        # assume already seconds or milliseconds; prefer milliseconds if large
+        if ts > 1e12:
+            return int(ts)
+        return int(ts * 1000)
+    if isinstance(ts, datetime):
+        return int(ts.timestamp() * 1000)
+    # try parse with pandas (handles many common formats)
+    try:
+        dt = pd.to_datetime(ts)
+        return int(dt.timestamp() * 1000)
+    except Exception:
+        raise ValueError(f"Could not parse time: {ts}")
+
+
+def fetch_data(symbol, interval, start=None, end=None, limit: int = 1000):
+    """Fetch historical klines from Binance using the public REST API.
+
+    Parameters
+    - symbol: e.g. 'BTCUSDT'
+    - interval: one of the keys in INTERVAL_MAP (e.g. '1m','1h','1d')
+    - start, end: datetime or parseable time string (optional). If omitted
+      Binance will return klines up to the latest time (limit-controlled).
+    - limit: maximum number of klines to return (default 1000)
+
+    Returns a pandas.DataFrame with columns: ['Open','High','Low','Close','Volume']
+    and the index set to the close time (pd.Timestamp).
+    """
     if interval not in INTERVAL_MAP:
         raise ValueError(f"Invalid interval. Choose from: {list(INTERVAL_MAP.keys())}")
-    
-    data = client.get_historical_klines(
-        symbol,
-        INTERVAL_MAP[interval],
-        start_str,
-        end_str
-    )
-    # Convert to DataFrame
-    data = pd.DataFrame(data, columns=[
-    "Open time", "Open", "High", "Low", "Close", "Volume",
-    "Close time", "Quote asset volume", "Number of trades",
-    "Taker buy base", "Taker buy quote", "Ignore"
+
+    params = {
+        "symbol": symbol,
+        "interval": INTERVAL_MAP[interval],
+        "limit": int(limit),
+    }
+
+    start_ms = _to_ms(start) if start is not None else None
+    end_ms = _to_ms(end) if end is not None else None
+    if start_ms is not None:
+        params["startTime"] = start_ms
+    if end_ms is not None:
+        params["endTime"] = end_ms
+
+    url = BASE_URL + "/api/v3/klines"
+    r = requests.get(url, params=params, timeout=30)
+    if r.status_code != 200:
+        raise RuntimeError(f"Binance klines request failed: {r.status_code} {r.text}")
+
+    data = r.json()
+    # Binance returns list of arrays: [ OpenTime, Open, High, Low, Close, Volume, CloseTime, ... ]
+    df = pd.DataFrame(data, columns=[
+        "Open time", "Open", "High", "Low", "Close", "Volume",
+        "Close time", "Quote asset volume", "Number of trades",
+        "Taker buy base", "Taker buy quote", "Ignore"
     ])
-    
-    # Convert timestamps
-    data["Open time"] = pd.to_datetime(data["Open time"], unit="ms")
-    data["Close time"] = pd.to_datetime(data["Close time"], unit="ms")
-    data.set_index("Close time", inplace=True)
-    data["Close"] = pd.to_numeric(data["Close"])
-    data["High"] = pd.to_numeric(data["High"])
-    data["Low"] = pd.to_numeric(data["Low"])
-    data["Open"] = pd.to_numeric(data["Open"])
-    data["Volume"] = pd.to_numeric(data["Volume"])
-    data["Volume"] = data["Volume"].astype(int)
-    data = data.round(2)
-    return data[["Open", "High", "Low", "Close", "Volume"]]
+
+    # Convert timestamps and numeric types
+    df["Open time"] = pd.to_datetime(df["Open time"], unit="ms")
+    df["Close time"] = pd.to_datetime(df["Close time"], unit="ms")
+    df.set_index("Close time", inplace=True)
+    for col in ["Open", "High", "Low", "Close", "Volume"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # ensure integer volume where reasonable
+    try:
+        df["Volume"] = df["Volume"].astype(float)
+    except Exception:
+        pass
+
+    # keep only a compact set of columns, rounded similarly to prior behaviour
+    df = df[["Open", "High", "Low", "Close", "Volume"]].round(6)
+    return df
 
 
 # def get_lot_step(symbol: str):
