@@ -199,8 +199,8 @@ class TradingBot:
             max_portfolio_loss_pct = 0.01
             position_size = (max_portfolio_loss_pct) / stop_loss_pct
     
-            print("aaaaa")
-            if (entry_price > 0.001 and position_size < 0.3 and position_size > 0.1): 
+            print(position_size)
+            if (entry_price > 0.001): 
                 # Determine decimal precision from LOT_STEP_INFO for this symbol and round prices accordingly
                 # try:
                 #     symbol_key = f"{item}USDT".replace('/', '').replace('-', '').upper()
