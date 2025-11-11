@@ -156,10 +156,13 @@ class TradingBot:
         # turn selected coins into a list of coins
         selected_coin_names = selected_coins['Coin'].tolist()
         self.last_selected_coins = selected_coin_names
-        print(selected_coin_names)
         # Fetch OHLCV data for selected coins
         for item in selected_coin_names:
+            print(f"Evaluating {item} for entry")
             ohlcv_1h = fetch_OHLCV(f"{item}USDT", '1h', start=datetime.now() - timedelta(hours=24), end=datetime.now())
+            if (ohlcv_1h is None or ohlcv_1h.empty):
+                logger.debug("main_strategy: no OHLCV data for %s, skipping", item)
+                continue
             entry_price = ohlcv_1h['Close'].max()
             # determine entry price from market; skip symbol if price not available
             # ### TESTING PURPOSE ####
@@ -195,8 +198,8 @@ class TradingBot:
             # given maximum portfolio loss of 1% per trade, calculate position size
             max_portfolio_loss_pct = 0.01
             position_size = (max_portfolio_loss_pct) / stop_loss_pct
-
-
+    
+            print("aaaaa")
             if (entry_price > 0.001 and position_size < 0.3 and position_size > 0.1): 
                 # Determine decimal precision from LOT_STEP_INFO for this symbol and round prices accordingly
                 try:
@@ -214,7 +217,7 @@ class TradingBot:
                 #     stop_loss = round(float(stop_loss), decimals)
                 # except Exception:
                 #     pass
-
+                print("bbbb")
                 if entry_price < 0.001:
                     continue
 
@@ -223,7 +226,7 @@ class TradingBot:
 
                 if item in self.positions.keys():
                     continue 
-
+                print("AHFLJ")
                 self.add_pending_trade(trade)
 
                 print(f"Added pending trade: {trade}, SL%: {stop_loss_pct}, Size: {position_size}, Entry: {entry_price}, TP: {take_profit}, SL: {stop_loss}")
@@ -541,8 +544,8 @@ class TradingBot:
                     last_order = now
 
                 print("Last Intervals")
-                print(f"Last Scan: {now - last_scan} seconds ago")
-                print(f"Last Strategy: {now - last_strategy} seconds ago")
+                print(f"Last Scan: {int(now - last_scan)} seconds ago")
+                print(f"Last Strategy: {int(now - last_strategy)} seconds ago")
 
                 # short sleep to avoid busy loop; resolution smaller than order interval
                 

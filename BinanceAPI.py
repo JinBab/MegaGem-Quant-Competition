@@ -76,9 +76,15 @@ def fetch_data(symbol, interval, start=None, end=None, limit: int = 1000):
         params["endTime"] = end_ms
 
     url = BASE_URL + "/api/v3/klines"
-    r = requests.get(url, params=params, timeout=30)
-    if r.status_code != 200:
-        raise RuntimeError(f"Binance klines request failed: {r.status_code} {r.text}")
+    try:
+        r = requests.get(url, params=params, timeout=30)
+        r.raise_for_status()  # Raise an error for HTTP errors
+        if r.status_code != 200: raise RuntimeError(f"Binance klines request failed: {r.status_code} {r.text}")
+    except requests.RequestException as e:
+        print(f"Error fetching Binance klines: {e}")
+        return None  # Return None on error
+
+    
 
     data = r.json()
     # Binance returns list of arrays: [ OpenTime, Open, High, Low, Close, Volume, CloseTime, ... ]
@@ -139,5 +145,6 @@ LOT_STEP_INFO = {'1000CHEEMSUSDT': {'step_size': 1.0, 'min_qty': 1.0}, 'AAVEUSDT
 
 # If no start time is given, it will just give maximum number of klines up to end time
 
-# data = fetch_data("BTCUSDT", "1m", None, "8 Nov 2025")
+# data = fetch_data("TRUMPUSDT", "1m", None, "8 Nov 2025")
+# print(data)
 
