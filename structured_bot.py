@@ -198,7 +198,7 @@ class TradingBot:
             # given maximum portfolio loss of 1% per trade, calculate position size
             max_portfolio_loss_pct = 0.01
             position_size = (max_portfolio_loss_pct) / stop_loss_pct
-    
+            print(stop_loss_pct)
             print(position_size)
             if (entry_price > 0.001): 
                 # Determine decimal precision from LOT_STEP_INFO for this symbol and round prices accordingly
