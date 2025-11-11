@@ -161,14 +161,14 @@ if __name__ == '__main__':
     # symbols = list(data["Data"].keys())
     # print(symbols)
     
-    ticker = get_ticker("ZEC/USD")
+    # ticker = get_ticker("ZEC/USD")
 
     # if ticker['Success']:
     #     print(ticker['Data'].values())
     #     place_order("ZEC", "BUY", 1, list(ticker['Data'].values())[0]['LastPrice'])
 
     # sell_all()
-    place_order("LINEA", "BUY", 100.0)
+    # place_order("LINEA", "BUY", 100.0)
     # place_order("ETH", "BUY", 0.004)
     # cancel_order()
     get_balance()

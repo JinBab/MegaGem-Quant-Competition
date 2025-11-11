@@ -74,6 +74,8 @@ class TradingBot:
 
         self.portfolio_value : float = 0.0
         self.available_cash : float = 0.0
+
+        self.last_selected_coins = []
         self.update_portfolio_value()
         print( "VAL: ",self.portfolio_value)
         print( "AVA",self.available_cash)
@@ -153,7 +155,7 @@ class TradingBot:
         selected_coins = self.last_scan_df[:top_n]
         # turn selected coins into a list of coins
         selected_coin_names = selected_coins['Coin'].tolist()
-
+        self.last_selected_coins = selected_coin_names
         print(selected_coin_names)
         # Fetch OHLCV data for selected coins
         for item in selected_coin_names:
@@ -239,7 +241,14 @@ class TradingBot:
         logger.debug("order_management: running")
         # 1) get all tickers/prices from Roostoo
         market_prices = self.get_all_market_prices()
+        print("Pending Queue: ")
         print(self.pending_queue)
+        print("Open Positions: ")
+        print(self.positions)
+        print("Selected Coins: ")
+        print(self.last_selected_coins)
+
+
         # 2) handle pending queue (copy and clear for processing)
         
         # clear the pending queue (we're single-threaded so this is safe)
@@ -531,8 +540,14 @@ class TradingBot:
                         logger.exception("run_loop: order_management error: %s", e)
                     last_order = now
 
+                print("Last Intervals")
+                print(f"Last Scan: {now - last_scan} seconds ago")
+                print(f"Last Strategy: {now - last_strategy} seconds ago")
+
                 # short sleep to avoid busy loop; resolution smaller than order interval
+                
                 time.sleep(min(1.0, self.order_mgmt_interval))
+
 
         except KeyboardInterrupt:
             sell_all()
@@ -551,11 +566,6 @@ if __name__ == "__main__":
         "order_mgmt_interval": 2,
         "default_size": 0.001,
     })
-
-    # buy and sell a specific asset at the start (for testing)
-    print(place_order("DOGE", "BUY", 10))
-    print(place_order("DOGE", "SELL", 10))
-
     # simple demo: call portfolio snapshot once
     bot.portfolio_status()
     # start the main run loop (will run until interrupted)
