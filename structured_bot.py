@@ -202,14 +202,14 @@ class TradingBot:
             print("aaaaa")
             if (entry_price > 0.001 and position_size < 0.3 and position_size > 0.1): 
                 # Determine decimal precision from LOT_STEP_INFO for this symbol and round prices accordingly
-                try:
-                    symbol_key = f"{item}USDT".replace('/', '').replace('-', '').upper()
-                    info = LOT_STEP_INFO.get(symbol_key, {})
-                    step = float(info.get('step_size', 0.01))
-                    exp = int(Decimal(str(step)).as_tuple().exponent)
-                    decimals = max(0, -exp)
-                except Exception:
-                    decimals = 8
+                # try:
+                #     symbol_key = f"{item}USDT".replace('/', '').replace('-', '').upper()
+                #     info = LOT_STEP_INFO.get(symbol_key, {})
+                #     step = float(info.get('step_size', 0.01))
+                #     exp = int(Decimal(str(step)).as_tuple().exponent)
+                #     decimals = max(0, -exp)
+                # except Exception:
+                #     decimals = 8
                 # Round prices to the determined precision
                 # try:
                 #     entry_price = round(float(entry_price), decimals)
