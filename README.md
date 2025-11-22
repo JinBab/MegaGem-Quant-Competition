@@ -72,5 +72,9 @@ Note: Move Roostoo/Binance API keys to environment variables for safety.
 - Respect API rate limits (Binance public REST and Roostoo mock)
 - This prototype is optimized for clarity and iteration, not HFT/latency
 
+---
+
+## Extro
+
 ## Team
 Team 27 — MegaGem (HKUST)
