@@ -76,5 +76,8 @@ Note: Move Roostoo/Binance API keys to environment variables for safety.
 
 ## Extro
 
+- A progress check for the two weeks of deployment. Our model successfully identified a period of significant negative overall crypto market momentum. In strict adherence to our strategy's core logic, which includes a market-regime filter, this resulted in no trade executions during the review period. The absence of trades is therefore not a system failure but a deliberate outcome of our risk-management protocol.
+
+
 ## Team
 Team 27 — MegaGem (HKUST)
